@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dierenasiel-alert"
+version = "0.1.0"
+description = "Monitor ikzoekbaas for new available cats at a given shelter"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    { name = "Michael Trip" }
+]
+dependencies = [
+    "requests>=2.31.0",
+    "beautifulsoup4>=4.12.2",
+    "reportlab>=4.0.0",
+]
+
+[project.scripts]
+dierenasiel-alert = "dierenasiel_alert.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

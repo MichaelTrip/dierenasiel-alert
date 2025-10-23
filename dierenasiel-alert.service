@@ -1,0 +1,16 @@
+[Unit]
+Description=Dierenasiel Alert - Cat Monitoring Service
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/home/michael/dev/dierenasiel-alert
+Environment="TELEGRAM_BOT_TOKEN=your_bot_token_here"
+Environment="TELEGRAM_CHAT_ID=your_chat_id_here"
+ExecStart=/home/michael/dev/dierenasiel-alert/venv/bin/dierenasiel-alert monitor --interval 300 --telegram
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

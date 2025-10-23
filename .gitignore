@@ -1,0 +1,38 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+*.egg
+.env
+.env.local
+.env.*.local
+.DS_Store
+.ipynb_checkpoints/
+*.pyproj
+*.sublime-workspace
+.idea/
+.vscode/
+*.log
+
+# Local data
+data/
+
+# Reports and generated PDFs
+*.pdf
+
+# OS files
+Thumbs.db
+
+# Coverage
+htmlcov/
+.coverage
+
+# Python virtual env in project
+.venv/
+
+# Mac and Linux specific
+*.swp
+*~

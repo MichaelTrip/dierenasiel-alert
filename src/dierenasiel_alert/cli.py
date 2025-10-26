@@ -18,10 +18,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         prog="dierenasiel-alert",
         description="Monitor ikzoekbaas for new available animals at a given shelter",
     )
-    
+
     # Subcommands
     subparsers = p.add_subparsers(dest="command", help="Available commands")
-    
+
     # Monitor command (default behavior)
     monitor_parser = subparsers.add_parser("monitor", help="Monitor for new animals")
     monitor_parser.add_argument(
@@ -31,8 +31,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help=f"Type of animal to monitor ({', '.join(ANIMAL_TYPES.keys())})",
     )
     monitor_parser.add_argument(
-        "--site", 
-        default=None, 
+        "--site",
+        default=None,
         help="Shelter site code (e.g. deKuipershoek). Mutually exclusive with --location"
     )
     monitor_parser.add_argument(
@@ -83,7 +83,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--telegram-chat-id",
         help="Telegram chat ID (or set TELEGRAM_CHAT_ID env var)",
     )
-    
+
     # List command
     list_parser = subparsers.add_parser("list", help="List currently available animals")
     list_parser.add_argument(
@@ -93,8 +93,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help=f"Type of animal to list ({', '.join(ANIMAL_TYPES.keys())})",
     )
     list_parser.add_argument(
-        "--site", 
-        default=None, 
+        "--site",
+        default=None,
         help="Shelter site code (e.g. deKuipershoek). Mutually exclusive with --location"
     )
     list_parser.add_argument(
@@ -120,7 +120,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         choices=["aflopend", "oplopend"],
         help="Sort order: aflopend (descending) or oplopend (ascending)",
     )
-    
+
     # Report command
     report_parser = subparsers.add_parser("report", help="Generate PDF report with animal photos")
     report_parser.add_argument(
@@ -130,8 +130,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help=f"Type of animal to report ({', '.join(ANIMAL_TYPES.keys())})",
     )
     report_parser.add_argument(
-        "--site", 
-        default=None, 
+        "--site",
+        default=None,
         help="Shelter site code (e.g. deKuipershoek). Mutually exclusive with --location"
     )
     report_parser.add_argument(
@@ -168,9 +168,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=None,
         help="Report title (default: auto-generated based on search parameters)",
     )
-    
+
     args = p.parse_args(argv)
-    
+
     # Default to monitor if no command specified
     if not args.command:
         args.command = "monitor"
@@ -197,7 +197,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             args.telegram_token = None
         if not hasattr(args, 'telegram_chat_id'):
             args.telegram_chat_id = None
-    
+
     # Validate mutual exclusivity of site and location
     if hasattr(args, 'site') and hasattr(args, 'location'):
         if args.site and args.location:
@@ -205,21 +205,21 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         # Validate distance is only used with location
         if hasattr(args, 'distance') and args.distance and not args.location:
             p.error("--distance can only be used with --location")
-    
+
     return args
 
 
 def run_once(
-    *, 
+    *,
     animal_type: str,
     site: Optional[str] = None,
-    availability: str, 
-    order: str, 
+    availability: str,
+    order: str,
     location: Optional[str] = None,
     distance: Optional[str] = None,
     store_path: Path,
-    telegram: bool = False, 
-    telegram_token: str | None = None, 
+    telegram: bool = False,
+    telegram_token: str | None = None,
     telegram_chat_id: str | None = None
 ) -> int:
     # Create store key based on search type
@@ -229,14 +229,14 @@ def run_once(
             key_site += f":{distance}"
     else:
         key_site = site or "deKuipershoek"
-    
+
     key = StoreKey(site=key_site, availability=availability, animal_type=animal_type)
 
     try:
         animals = scrape_animals(
             animal_type=animal_type,
-            availability=availability, 
-            site=site, 
+            availability=availability,
+            site=site,
             order=order,
             location=location,
             distance=distance,
@@ -253,11 +253,10 @@ def run_once(
     new_entries.sort(key=lambda a: a.id)
 
     if new_entries:
-        # Desktop notification first (if available), then console
-        notify_desktop(new_entries)
+        # Console notification is always shown
         notify_console(new_entries)
-        
-        # Telegram notification if enabled
+
+        # Choose notification method: Telegram or desktop (not both)
         if telegram:
             token = telegram_token or os.getenv("TELEGRAM_BOT_TOKEN")
             chat_id = telegram_chat_id or os.getenv("TELEGRAM_CHAT_ID")
@@ -265,6 +264,9 @@ def run_once(
                 notify_telegram(new_entries, token, chat_id)
             else:
                 print("Warning: Telegram notifications enabled but token/chat_id not provided", file=sys.stderr)
+        else:
+            # Only send desktop notifications when Telegram is not enabled
+            notify_desktop(new_entries)
     else:
         animal_name = ANIMAL_TYPES.get(animal_type, animal_type)
         print(f"No new {animal_name} found.")
@@ -277,10 +279,10 @@ def run_once(
 
 
 def list_animals(
-    *, 
-    animal_type: str, 
+    *,
+    animal_type: str,
     site: Optional[str] = None,
-    availability: str, 
+    availability: str,
     order: str,
     location: Optional[str] = None,
     distance: Optional[str] = None,
@@ -289,8 +291,8 @@ def list_animals(
     try:
         animals = scrape_animals(
             animal_type=animal_type,
-            availability=availability, 
-            site=site, 
+            availability=availability,
+            site=site,
             order=order,
             location=location,
             distance=distance,
@@ -300,7 +302,7 @@ def list_animals(
         return 2
 
     animal_name = ANIMAL_TYPES.get(animal_type, animal_type)
-    
+
     # Build description of search parameters
     if location:
         search_desc = f"location={location}"
@@ -308,7 +310,7 @@ def list_animals(
             search_desc += f" within {distance}"
     else:
         search_desc = f"site={site or 'deKuipershoek'}"
-    
+
     if not animals:
         print(f"No {animal_name} found with availability={availability} at {search_desc}")
         return 0
@@ -333,10 +335,10 @@ def list_animals(
 
 
 def generate_report(
-    *, 
-    animal_type: str, 
+    *,
+    animal_type: str,
     site: Optional[str] = None,
-    availability: str, 
+    availability: str,
     order: str,
     location: Optional[str] = None,
     distance: Optional[str] = None,
@@ -347,8 +349,8 @@ def generate_report(
     try:
         animals = scrape_animals(
             animal_type=animal_type,
-            availability=availability, 
-            site=site, 
+            availability=availability,
+            site=site,
             order=order,
             location=location,
             distance=distance,
@@ -358,7 +360,7 @@ def generate_report(
         return 2
 
     animal_name = ANIMAL_TYPES.get(animal_type, animal_type)
-    
+
     # Build description of search parameters
     if location:
         search_desc = f"location={location}"
@@ -366,7 +368,7 @@ def generate_report(
             search_desc += f" within {distance}"
     else:
         search_desc = f"site={site or 'deKuipershoek'}"
-    
+
     if not animals:
         print(f"No {animal_name} found with availability={availability} at {search_desc}")
         return 0
@@ -380,7 +382,7 @@ def generate_report(
                 title += f" within {distance}"
         elif site:
             title += f" at {site}"
-    
+
     print(f"Generating PDF report for {len(animals)} {animal_name}...")
     try:
         generate_pdf_report(animals, output, title=title)
@@ -402,7 +404,7 @@ def main(argv: list[str] | None = None) -> int:
             location=ns.location,
             distance=ns.distance,
         )
-    
+
     if ns.command == "report":
         return generate_report(
             animal_type=ns.animal_type,
@@ -431,7 +433,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     animal_name = ANIMAL_TYPES.get(ns.animal_type, ns.animal_type)
-    
+
     # Build monitoring description
     if ns.location:
         search_desc = f"location={ns.location}"
@@ -439,7 +441,7 @@ def main(argv: list[str] | None = None) -> int:
             search_desc += f" within {ns.distance}"
     else:
         search_desc = f"site={ns.site or 'deKuipershoek'}"
-    
+
     print(
         f"Monitoring {animal_name} at {search_desc}, availability={ns.availability}, order={ns.order} every {ns.interval}s..."
     )

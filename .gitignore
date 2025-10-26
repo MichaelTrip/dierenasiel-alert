@@ -36,3 +36,4 @@ htmlcov/
 # Mac and Linux specific
 *.swp
 *~
+crontab.sh

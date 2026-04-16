@@ -64,7 +64,7 @@ spec:
             - name: dierenasiel-alert
               # Image is automatically updated by the CI workflow on every
               # push to main. Manually override by editing this line.
-              image: ghcr.io/michaeltrip/dierenasiel-alert:latest
+              image: ghcr.io/michaeltrip/dierenasiel-alert:v1.0.0
               imagePullPolicy: IfNotPresent
               # Run once and exit (no --interval flag or --interval 0).
               args:

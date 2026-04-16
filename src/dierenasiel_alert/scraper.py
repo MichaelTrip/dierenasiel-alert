@@ -137,7 +137,7 @@ def fetch_html(url: str, *, timeout: int = 30, retries: int = 3) -> str:
                 () => {
                     const hasResults = document.querySelector('article a[href*="/asieldier/"]') !== null;
                     const text = (document.body && document.body.innerText ? document.body.innerText : '').toLowerCase();
-                    const hasNoResults = /geen\s+.*gevonden|no\s+results|geen\s+resultaten/.test(text);
+                    const hasNoResults = /geen\\s+.*gevonden|no\\s+results|geen\\s+resultaten/.test(text);
                     return hasResults || hasNoResults;
                 }
                 """,

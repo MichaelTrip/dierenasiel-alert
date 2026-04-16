@@ -120,14 +120,41 @@ def _get_browser():
     return _playwright_browser
 
 
-def fetch_html(url: str, *, timeout: int = 30) -> str:
+def fetch_html(url: str, *, timeout: int = 30, retries: int = 3) -> str:
     browser = _get_browser()
-    page = browser.new_page()
-    try:
-        page.goto(url, wait_until="networkidle", timeout=timeout * 1000)
-        return page.content()
-    finally:
-        page.close()
+    last_error: Exception | None = None
+
+    for attempt in range(retries):
+        page = browser.new_page()
+        try:
+            # DOMContentLoaded is less brittle than networkidle on modern pages.
+            page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
+            page.wait_for_selector("body", timeout=min(5000, timeout * 1000))
+            # Wait until either animal cards are rendered or an explicit no-results
+            # message is visible, to avoid parsing too early on JS-heavy pages.
+            page.wait_for_function(
+                """
+                () => {
+                    const hasResults = document.querySelector('article a[href*="/asieldier/"]') !== null;
+                    const text = (document.body && document.body.innerText ? document.body.innerText : '').toLowerCase();
+                    const hasNoResults = /geen\s+.*gevonden|no\s+results|geen\s+resultaten/.test(text);
+                    return hasResults || hasNoResults;
+                }
+                """,
+                timeout=min(12000, timeout * 1000),
+            )
+            return page.content()
+        except Exception as e:
+            last_error = e
+            if attempt == retries - 1:
+                raise
+            # Back off slightly for transient DNS/network hiccups in containers.
+            time.sleep(1.0 * (attempt + 1))
+        finally:
+            page.close()
+
+    # Defensive fallback; loop should return or raise before this.
+    raise RuntimeError(f"Failed to fetch {url}: {last_error}")
 
 
 def parse_animals(
@@ -290,6 +317,21 @@ def scrape_animals(
             site=site, 
             availability=availability
         )
+
+        # On some runs the JS results grid renders late; retry first page once
+        # before deciding that there are no results.
+        if page == 1 and not animals:
+            try:
+                html = fetch_html(url, timeout=timeout, retries=2)
+                animals = parse_animals(
+                    html,
+                    animal_type=animal_type,
+                    base=get_base_url(animal_type),
+                    site=site,
+                    availability=availability,
+                )
+            except Exception:
+                pass
         
         # If no animals found on this page, we've reached the end
         if not animals:

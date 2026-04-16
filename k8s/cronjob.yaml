@@ -1,0 +1,104 @@
+---
+# Persistent storage for the seen.json file so the CronJob
+# remembers which animals it has already alerted on.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dierenasiel-alert-data
+  labels:
+    app: dierenasiel-alert
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Mi
+---
+# Secret holding Telegram credentials.
+# Create it once with:
+#   kubectl create secret generic dierenasiel-alert-telegram \
+#     --from-literal=bot-token=YOUR_BOT_TOKEN \
+#     --from-literal=chat-id=YOUR_CHAT_ID
+#
+# The manifest below references this secret by name; the Job will not
+# start if the secret does not exist.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dierenasiel-alert-telegram
+  labels:
+    app: dierenasiel-alert
+type: Opaque
+# Replace the base64-encoded values below, or delete this Secret block
+# and create it manually with kubectl (see comment above).
+stringData:
+  bot-token: ""
+  chat-id: ""
+---
+# CronJob that checks for new animals every hour and sends Telegram alerts.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dierenasiel-alert
+  labels:
+    app: dierenasiel-alert
+spec:
+  # Run at the top of every hour.
+  schedule: "0 * * * *"
+  # Keep the last 3 successful and 1 failed job logs for debugging.
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  # Do not start a new job if the previous one is still running.
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      # Retry up to 2 times on transient scraping failures.
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: dierenasiel-alert
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: dierenasiel-alert
+              # Image is automatically updated by the CI workflow on every
+              # push to main. Manually override by editing this line.
+              image: ghcr.io/michaeltrip/dierenasiel-alert:latest
+              imagePullPolicy: IfNotPresent
+              # Run once and exit (no --interval flag or --interval 0).
+              args:
+                - monitor
+                - --store
+                - /data/seen.json
+                - --telegram
+                # Adjust --site or replace with --location / --distance:
+                - --site
+                - deKuipershoek
+                - --animal-type
+                - katten
+              env:
+                - name: TELEGRAM_BOT_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: dierenasiel-alert-telegram
+                      key: bot-token
+                - name: TELEGRAM_CHAT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: dierenasiel-alert-telegram
+                      key: chat-id
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "256Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: dierenasiel-alert-data

@@ -208,6 +208,157 @@ The numeric animal ID from URLs like `/asieldier/<animal-type>/<id>-<name>` is u
 2. **Desktop**: If `notify-send` is available (most Linux desktops), desktop notifications will be shown with appropriate emojis (🐱 for cats, 🐶 for dogs, 🐦 for birds, 🐰 for rabbits/rodents)
 3. **Telegram**: If enabled with `--telegram` flag and proper credentials, sends rich notifications via Telegram bot
 
+## Docker
+
+The image is automatically built and published to the GitHub Container Registry (GHCR) by the CI pipeline on every push to `main`.
+
+```bash
+docker pull ghcr.io/michaeltrip/dierenasiel-alert:latest
+```
+
+### Build the image locally
+
+```bash
+docker build -t dierenasiel-alert:latest .
+```
+
+### One-time check (runs once and exits)
+
+```bash
+# Check for new cats at a shelter, print results to console
+docker run --rm ghcr.io/michaeltrip/dierenasiel-alert:latest monitor --site deKuipershoek
+
+# Check by postal code with Telegram alert
+docker run --rm \
+  -e TELEGRAM_BOT_TOKEN="your-bot-token" \
+  -e TELEGRAM_CHAT_ID="your-chat-id" \
+  ghcr.io/michaeltrip/dierenasiel-alert:latest monitor --location 7323PM --distance 50km --telegram
+
+# Check dogs at a shelter
+docker run --rm ghcr.io/michaeltrip/dierenasiel-alert:latest monitor --animal-type honden --site deKuipershoek
+```
+
+### Persist state between runs
+
+Mount a local directory to `/data` so the container remembers which animals it has already seen:
+
+```bash
+mkdir -p ./data
+
+docker run --rm \
+  -v "$(pwd)/data:/data" \
+  -e TELEGRAM_BOT_TOKEN="your-bot-token" \
+  -e TELEGRAM_CHAT_ID="your-chat-id" \
+  ghcr.io/michaeltrip/dierenasiel-alert:latest monitor \
+    --store /data/seen.json \
+    --site deKuipershoek \
+    --telegram
+```
+
+### Run as a Docker cron job
+
+Use the host cron daemon to run the container on a schedule. Each run scrapes once and exits; the mounted volume carries state across invocations.
+
+```cron
+# Check for new cats every hour
+0 * * * * docker run --rm \
+  -v /opt/dierenasiel-alert/data:/data \
+  -e TELEGRAM_BOT_TOKEN="your-bot-token" \
+  -e TELEGRAM_CHAT_ID="your-chat-id" \
+  ghcr.io/michaeltrip/dierenasiel-alert:latest monitor \
+    --store /data/seen.json \
+    --site deKuipershoek \
+    --telegram >> /var/log/dierenasiel-alert.log 2>&1
+
+# Check for new dogs every 30 minutes by postal code
+*/30 * * * * docker run --rm \
+  -v /opt/dierenasiel-alert/data:/data \
+  -e TELEGRAM_BOT_TOKEN="your-bot-token" \
+  -e TELEGRAM_CHAT_ID="your-chat-id" \
+  ghcr.io/michaeltrip/dierenasiel-alert:latest monitor \
+    --animal-type honden \
+    --store /data/seen.json \
+    --location 7323PM \
+    --distance 50km \
+    --telegram >> /var/log/dierenasiel-alert-dogs.log 2>&1
+```
+
+### Generate a PDF report with Docker
+
+```bash
+docker run --rm \
+  -v "$(pwd)/reports:/reports" \
+  ghcr.io/michaeltrip/dierenasiel-alert:latest report \
+    --location 7323PM \
+    --distance 50km \
+    --output /reports/cats.pdf
+```
+
+## Kubernetes
+
+A ready-made CronJob manifest is provided in [`k8s/cronjob.yaml`](k8s/cronjob.yaml). It:
+
+- Runs `dierenasiel-alert monitor` **every hour**
+- Persists state in a `PersistentVolumeClaim`
+- Reads Telegram credentials from a Kubernetes `Secret`
+
+### CI/CD
+
+The [GitHub Actions workflow](.github/workflows/build-release.yaml) runs on every push to `main` and automatically:
+
+1. Computes a semver tag from commit messages (`feat:` → minor bump, `BREAKING CHANGE:` → major bump, everything else → patch)
+2. Builds and pushes the image to GHCR as `ghcr.io/michaeltrip/dierenasiel-alert:<tag>`
+3. Creates a versioned git tag and GitHub Release
+4. Updates `k8s/cronjob.yaml` with the new image tag in-place and commits the change
+
+You can also trigger a release manually from the **Actions** tab with an optional version override.
+
+### Deploy
+
+1. **Create the Telegram secret**:
+
+   ```bash
+   kubectl create secret generic dierenasiel-alert-telegram \
+     --from-literal=bot-token=YOUR_BOT_TOKEN \
+     --from-literal=chat-id=YOUR_CHAT_ID
+   ```
+
+2. **Apply the manifest** (the image tag is kept up-to-date automatically by CI):
+
+   ```bash
+   kubectl apply -f k8s/cronjob.yaml
+   ```
+
+3. **Trigger a manual run** to verify everything works:
+
+   ```bash
+   kubectl create job --from=cronjob/dierenasiel-alert dierenasiel-alert-test
+   kubectl logs -l app=dierenasiel-alert --follow
+   ```
+
+### Customise the schedule or search parameters
+
+Edit the relevant fields in `k8s/cronjob.yaml`:
+
+```yaml
+spec:
+  schedule: "0 * * * *"   # every hour — change to e.g. "*/30 * * * *" for every 30 min
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - args:
+                - monitor
+                - --store
+                - /data/seen.json
+                - --telegram
+                - --site
+                - deKuipershoek      # or replace with --location <postcode> --distance 50km
+                - --animal-type
+                - katten             # katten | honden | vogels | konijnen-en-knagers
+```
+
 ## Automation Examples
 
 ### Cron Jobs

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Iterable, List, Optional
 from urllib.parse import urlencode, urljoin
 
-import requests
+from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 
 
@@ -108,16 +108,26 @@ def build_search_url(
     return f"{base_url}?{urlencode(params)}"
 
 
-def fetch_html(url: str, *, timeout: int = 20) -> str:
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
-        )
-    }
-    resp = requests.get(url, headers=headers, timeout=timeout)
-    resp.raise_for_status()
-    return resp.text
+_playwright_instance = None
+_playwright_browser = None
+
+
+def _get_browser():
+    global _playwright_instance, _playwright_browser
+    if _playwright_browser is None:
+        _playwright_instance = sync_playwright().start()
+        _playwright_browser = _playwright_instance.chromium.launch(headless=True)
+    return _playwright_browser
+
+
+def fetch_html(url: str, *, timeout: int = 30) -> str:
+    browser = _get_browser()
+    page = browser.new_page()
+    try:
+        page.goto(url, wait_until="networkidle", timeout=timeout * 1000)
+        return page.content()
+    finally:
+        page.close()
 
 
 def parse_animals(
@@ -134,21 +144,18 @@ def parse_animals(
     if base is None:
         base = get_base_url(animal_type)
     
-    # Find article cards with data-v-2f76df55 attribute (more reliable)
-    articles = soup.find_all('article', attrs={"data-v-2f76df55": True})
+    # Find all article cards that contain an animal detail link
     results: dict[str, AnimalEntry] = {}
 
     id_re = re.compile(rf"/asieldier/{re.escape(animal_type)}/(\d+)-([a-z0-9\-]+)", re.IGNORECASE)
 
-    for article in articles:
-        # Find the main link
-        a = article.find('a', href=True)
+    for article in soup.find_all('article'):
+        # Find the main animal link
+        a = article.find('a', href=lambda h: h and f'/asieldier/{animal_type}/' in h)
         if not a:
             continue
-        
+
         href = a.get("href")
-        if not href:
-            continue
         href_abs = urljoin(base, href)
 
         m = id_re.search(href_abs)
@@ -156,42 +163,30 @@ def parse_animals(
             continue
         animal_id, slug = m.group(1), m.group(2)
 
-        # Extract location from the article
+        # Name from the h3 heading inside the card
+        h3 = article.find('h3')
+        display_name = h3.get_text(strip=True) if h3 else slug.replace("-", " ").title()
+
+        # Location: the div with the map-pin SVG (flex + items-center + text-sm + text-black,
+        # but NOT font-bold which identifies the gender/date row)
         location = None
-        location_divs = article.find_all('div', class_=['flex', 'items-center'])
-        for div in location_divs:
-            text = div.get_text(strip=True)
-            # Location is typically a city name without dates or bullets
-            if text and '•' not in text and not any(char.isdigit() for char in text):
-                location = text
-                break
-        
-        # Extract photo URL
+        for div in article.find_all('div'):
+            classes = ' '.join(div.get('class', []))
+            if ('flex' in classes and 'items-center' in classes
+                    and 'text-sm' in classes and 'text-black' in classes
+                    and 'font-bold' not in classes):
+                loc_text = div.get_text(strip=True)
+                if loc_text:
+                    location = loc_text
+                    break
+
+        # Extract photo URL from the first picture tag
         photo_url = None
-        picture = article.find('picture', attrs={"data-v-2f76df55": True})
+        picture = article.find('picture')
         if picture:
             img = picture.find('img')
             if img and img.get('src'):
                 photo_url = img.get('src')
-        
-        # Derive name from slug
-        slug_name = slug.replace("-", " ").title()
-        
-        # Try to get better name from article text
-        text_divs = article.find_all('div', class_='flex')
-        display_name = slug_name
-        for div in text_divs:
-            text = div.get_text(strip=True)
-            # Look for text that looks like a name (short, has letters, no dates)
-            if text and len(text) < 50 and any(c.isalpha() for c in text) and '•' not in text:
-                # Skip if it contains common non-name words
-                if not any(word in text.lower() for word in ['koppel', 'mannelijk', 'vrouwelijk']):
-                    continue
-                # Extract name part (usually before bullet or date)
-                parts = text.split('•')[0].split('Mannelijk')[0].split('Vrouwelijk')[0]
-                if parts and len(parts.strip()) > 2:
-                    display_name = parts.strip()
-                    break
 
         if animal_id not in results:
             results[animal_id] = AnimalEntry(

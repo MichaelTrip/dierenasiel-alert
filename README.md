@@ -208,6 +208,8 @@ The numeric animal ID from URLs like `/asieldier/<animal-type>/<id>-<name>` is u
 2. **Desktop**: If `notify-send` is available (most Linux desktops), desktop notifications will be shown with appropriate emojis (🐱 for cats, 🐶 for dogs, 🐦 for birds, 🐰 for rabbits/rodents)
 3. **Telegram**: If enabled with `--telegram` flag and proper credentials, sends rich notifications via Telegram bot
 
+<<<<<<< Updated upstream
+=======
 ## Docker
 
 The image is automatically built and published to the GitHub Container Registry (GHCR) by the CI pipeline on every push to `main`.
@@ -304,14 +306,14 @@ A ready-made CronJob manifest is provided in [`k8s/cronjob.yaml`](k8s/cronjob.ya
 
 ### CI/CD
 
-The [GitHub Actions workflow](.github/workflows/build-release.yaml) runs on every push to `main` and automatically:
+The GitHub Actions workflow in `.github/workflows/build-release.yaml` runs on every push to `master` and automatically:
 
 1. Computes a semver tag from commit messages (`feat:` → minor bump, `BREAKING CHANGE:` → major bump, everything else → patch)
 2. Builds and pushes the image to GHCR as `ghcr.io/michaeltrip/dierenasiel-alert:<tag>`
 3. Creates a versioned git tag and GitHub Release
 4. Updates `k8s/cronjob.yaml` with the new image tag in-place and commits the change
 
-You can also trigger a release manually from the **Actions** tab with an optional version override.
+You can also trigger a release manually from the **Actions** tab with an optional version override. Manual releases create the container image, a versioned git tag, and a GitHub Release as part of the same workflow run.
 
 ### Deploy
 
@@ -359,6 +361,7 @@ spec:
                 - katten             # katten | honden | vogels | konijnen-en-knagers
 ```
 
+>>>>>>> Stashed changes
 ## Automation Examples
 
 ### Cron Jobs

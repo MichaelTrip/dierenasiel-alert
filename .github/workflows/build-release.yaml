@@ -285,7 +285,7 @@ jobs:
           git add k8s/cronjob.yaml
           git commit -m "chore: update cronjob image to ${{ needs.determine-tag.outputs.docker-tag }} [skip ci]
 
-Auto-generated from workflow run: ${{ github.run_id }}"
+          Auto-generated from workflow run: ${{ github.run_id }}"
 
           git fetch origin main
           git rebase origin/main
